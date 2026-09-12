@@ -1,6 +1,6 @@
 <div align="center">
   <br />
-  <img width="1920" height="954" alt="Banner WeFaber" src="https://raw.githubusercontent.com/wefaber/.github/main/assets/banner.png" />
+  <img width="1920" height="954" alt="Banner WeFaber" src="https://cdn.wefaber.net/orgs/wefaber/banner.png" />
 
   <br /><br />
 
