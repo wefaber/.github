@@ -1,0 +1,87 @@
+name: Security (reusable)
+
+# Reusable SAST + secret scan (Semgrep OSS, free). Call it from a repo with:
+#
+#   jobs:
+#     security:
+#       uses: wefaber/.github/.github/workflows/security.yml@main
+#
+on:
+  workflow_call:
+    inputs:
+      fail_severity:
+        description: "Minimum Semgrep severity that FAILS the job (ERROR|WARNING|INFO)"
+        type: string
+        default: ERROR
+        required: false
+      configs:
+        description: "Space-separated Semgrep rule configs"
+        type: string
+        default: "auto p/secrets"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    name: Semgrep SAST + secret scan
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Semgrep
+        run: |
+          python3 -m venv "$RUNNER_TEMP/semgrep-venv"
+          "$RUNNER_TEMP/semgrep-venv/bin/pip" install --quiet --upgrade pip semgrep
+          echo "$RUNNER_TEMP/semgrep-venv/bin" >> "$GITHUB_PATH"
+
+      - name: Scan
+        run: |
+          args=""
+          for c in ${{ inputs.configs }}; do args="$args --config $c"; done
+          semgrep scan $args \
+            --exclude node_modules --exclude dist --exclude build \
+            --exclude .git --exclude '*.min.js' \
+            --json --output semgrep.json || true
+
+      - name: Summarize and gate
+        env:
+          FAIL_SEVERITY: ${{ inputs.fail_severity }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          try:
+              data = json.load(open("semgrep.json"))
+          except Exception as exc:
+              print(f"no semgrep.json ({exc}); skipping gate")
+              sys.exit(0)
+          rank = {"ERROR": 3, "WARNING": 2, "INFO": 1}
+          gate = rank.get(os.environ.get("FAIL_SEVERITY", "ERROR").upper(), 3)
+          results = data.get("results", [])
+          counts = {}
+          worst = 0
+          for r in results:
+              sev = (r.get("extra", {}).get("severity") or "INFO").upper()
+              counts[sev] = counts.get(sev, 0) + 1
+              worst = max(worst, rank.get(sev, 1))
+          print(f"Semgrep: {len(results)} finding(s)  {counts}")
+          if len(results) <= 200:
+              for r in results:
+                  sev = (r.get("extra", {}).get("severity") or "INFO").upper()
+                  loc = r.get("start", {}).get("line")
+                  print(f"  [{sev}] {r.get('check_id')}  {r.get('path')}:{loc}")
+          if worst >= gate:
+              print(f"::error::Semgrep found findings at or above {os.environ.get('FAIL_SEVERITY')}")
+              sys.exit(1)
+          PY
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-report
+          path: semgrep.json
+          if-no-files-found: ignore
