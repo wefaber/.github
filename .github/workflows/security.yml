@@ -26,7 +26,9 @@ permissions:
 jobs:
   semgrep:
     name: Semgrep SAST + secret scan
-    runs-on: self-hosted
+    # Publico -> GitHub-hosted: un PR de fork correria codigo en la VPS.
+    # Privado -> runner self-hosted de la org, igual que siempre.
+    runs-on: ${{ github.event.repository.private && 'self-hosted' || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,9 +41,13 @@ jobs:
           echo "$RUNNER_TEMP/semgrep-venv/bin" >> "$GITHUB_PATH"
 
       - name: Scan
+        env:
+          CONFIGS: ${{ inputs.configs }}
         run: |
+          # CONFIGS se expande en el shell (sin ${{ }} dentro del run).
+          # Sin comillas para separar configs por espacios, como antes.
           args=""
-          for c in ${{ inputs.configs }}; do args="$args --config $c"; done
+          for c in $CONFIGS; do args="$args --config $c"; done
           semgrep scan $args \
             --exclude node_modules --exclude dist --exclude build \
             --exclude .git --exclude '*.min.js' \
