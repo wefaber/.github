@@ -43,12 +43,15 @@ jobs:
       - name: Scan
         env:
           CONFIGS: ${{ inputs.configs }}
+        # NOTA: nunca escribir la sintaxis de interpolacion literal en un comentario
+        # de este bloque. El YAML se evalua ANTES de que el shell lo lea, asi que un
+        # delimitador vacio dentro de run invalida el workflow entero.
         run: |
-          # CONFIGS se expande en el shell (sin ${{ }} dentro del run).
-          # Sin comillas para separar configs por espacios, como antes.
-          args=""
-          for c in $CONFIGS; do args="$args --config $c"; done
-          semgrep scan $args \
+          # CONFIGS llega por env y se parte por espacios a proposito.
+          read -r -a configs <<< "$CONFIGS" || true
+          args=()
+          for c in "${configs[@]}"; do args+=("--config" "$c"); done
+          semgrep scan "${args[@]}" \
             --exclude node_modules --exclude dist --exclude build \
             --exclude .git --exclude '*.min.js' \
             --json --output semgrep.json || true
